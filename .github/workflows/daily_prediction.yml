@@ -1,12 +1,12 @@
-name: AI Football Expert Autonomous & Learning
+name: AI Football Expert Autonomous & Deep Learning
 
 on:
   schedule:
-    - cron: '0 23 * * *' # Se ejecuta al final del día (11 PM UTC)
+    - cron: '0 23 * * *' 
   workflow_dispatch:
 
 jobs:
-  predict-and-learn:
+  predict-learn-evolve:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,18 +20,15 @@ jobs:
       - name: Install Libs
         run: pip install requests numpy scipy pandas
 
-      - name: Step 1: Execute Daily Predictions
+      - name: Execute Full Autonomous Cycle
         env:
           ALLSPORTS_API_KEY: ${{ secrets.ALLSPORTS_API_KEY }}
         run: python3 main_automation.py
 
-      - name: Step 2: Self-Learning and Model Tuning
-        run: python3 learning_engine.py
-
-      - name: Step 3: Persistence
+      - name: Persist Evolution
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub AI Optimizer"
-          git add football_data.db daily_report.json model_params.json || exit 0
-          git commit -m "Daily Analytics & Self-Learning Update [Autonomous]" || exit 0
+          git add football_data.db daily_report.json model_params.json
+          git commit -m "Daily Evolution: Deep Learning & Predictions [Autonomous]" || exit 0
           git push
