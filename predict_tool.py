@@ -1,74 +1,52 @@
-import requests
+import sys
 import json
 import numpy as np
 from scipy.stats import poisson
-from datetime import datetime, timedelta
+import os
 
-class RealTimeExpertSystem:
-    def __init__(self, api_key):
-        self.api_key = api_key
-        self.base_url = "https://apiv2.allsportsapi.com/football/"
+class ExpertFootballSystem:
+    def __init__(self):
+        self.version = "5.0-Param-Optimized"
+        # Cargar parámetros mejorados si existen
+        if os.path.exists('model_params.json'):
+            with open('model_params.json', 'r') as f:
+                self.params = json.load(f)
+        else:
+            self.params = {"k_factor": 32, "dynamic_xg_bias": 0.10}
 
-    def get_live_fixtures(self):
-        """Extrae partidos reales programados para hoy y mañana."""
-        start = datetime.now().strftime('%Y-%m-%d')
-        end = (datetime.now() + timedelta(days=2)).strftime('%Y-%m-%d')
-        params = {
-            'met': 'Fixtures',
-            'APIkey': self.api_key,
-            'from': start,
-            'to': end
+    def calculate_poisson(self, h_xg, a_xg):
+        # Aplicar sesgo dinámico basado en aprendizaje previo
+        bias = self.params.get("dynamic_xg_bias", 0.10)
+        h_xg_adj = h_xg * (1 + bias)
+        a_xg_adj = a_xg * (1 - bias / 2)
+        
+        h_probs = poisson.pmf(range(7), h_xg_adj)
+        a_probs = poisson.pmf(range(7), a_xg_adj)
+        m = np.outer(h_probs, a_probs)
+        return float(np.sum(np.tril(m, -1))), float(np.sum(np.diag(m))), float(np.sum(np.triu(m, 1)))
+
+    def run_inference(self, match_data):
+        p1, px, p2 = self.calculate_poisson(match_data['h_xg'], match_data['a_xg'])
+        best_prob = max(p1, px, p2)
+        label = {p1: '1', px: 'X', p2: '2'}[best_prob]
+        odds = match_data['odds'][label]
+        
+        # Kelly fraccional dinámico según K-Factor
+        fraction = 0.25 if self.params['k_factor'] < 35 else 0.15
+        kelly = (best_prob * (odds - 1) - (1 - best_prob)) / (odds - 1)
+
+        return {
+            "match": f"{match_data['home']} vs {match_data['away']}",
+            "expert_consensus": {"1": p1, "X": px, "2": p2},
+            "recommended_bet": label,
+            "bankroll_management": {
+                "kelly_fraction": f"{round(max(0, kelly) * 100 * fraction, 2)}%",
+                "edge": f"{round((best_prob - (1/odds))*100, 2)}%"
+            },
+            "params_used": self.params
         }
-        response = requests.get(self.base_url, params=params)
-        return response.json().get('result', [])[:5] # Analizamos los primeros 5 reales
-
-    def calculate_advanced_markets(self, h_xg, a_xg):
-        """Calcula 1X2, Over 2.5 y BTTS usando Poisson."""
-        max_g = 6
-        h_probs = poisson.pmf(range(max_g), h_xg)
-        a_probs = poisson.pmf(range(max_g), a_xg)
-        matrix = np.outer(h_probs, a_probs)
-
-        # 1X2 Probabilities
-        p1 = float(np.sum(np.tril(matrix, -1)))
-        px = float(np.sum(np.diag(matrix)))
-        p2 = float(np.sum(np.triu(matrix, 1)))
-
-        # Over 2.5 Goals
-        prob_under_25 = matrix[0,0] + matrix[0,1] + matrix[0,2] + matrix[1,0] + matrix[1,1] + matrix[2,0]
-        p_over25 = 1 - float(prob_under_25)
-
-        # BTTS (Both Teams To Score)
-        p_btts = float(1 - (np.sum(matrix[0, :]) + np.sum(matrix[:, 0]) - matrix[0,0]))
-
-        return {"1X2": {"1": p1, "X": px, "2": p2}, "Over2.5": p_over25, "BTTS": p_btts}
-
-    def analyze_real_data(self):
-        fixtures = self.get_live_fixtures()
-        analysis_report = []
-
-        for f in fixtures:
-            # Usamos xG histórico simplificado o stats de temporada si estuvieran disponibles
-            # En esta fase, derivamos xG de la posición y goles previos reales de la API
-            h_name = f['event_home_team']
-            a_name = f['event_away_team']
-            
-            # Lógica de inferencia basada en datos reales de la temporada (simulada por xG dinámico)
-            h_xg_real = 1.5 # Aquí se conectaría a la tabla de promedios real
-            a_xg_real = 1.2
-            
-            markets = self.calculate_advanced_markets(h_xg_real, a_xg_real)
-            
-            analysis_report.append({
-                "match": f"{h_name} vs {a_name}",
-                "league": f['league_name'],
-                "kickoff": f['event_time'],
-                "probabilities": markets,
-                "expert_pick": "Over 2.5" if markets['Over2.5'] > 0.55 else "Value in 1X2"
-            })
-        return analysis_report
 
 if __name__ == "__main__":
-    key = "2745fc3b554dbf9f541f8b1adf111d78d76ef56b01fe02c7f1d2f2313d2fe5bf"
-    system = RealTimeExpertSystem(key)
-    print(json.dumps(system.analyze_real_data(), indent=2))
+    system = ExpertFootballSystem()
+    test_match = {"home": "Real Madrid", "away": "Barcelona", "h_xg": 2.2, "a_xg": 1.4, "odds": {"1": 2.05, "X": 3.50, "2": 3.80}}
+    print(json.dumps(system.run_inference(test_match), indent=2))
