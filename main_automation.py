@@ -1,7 +1,7 @@
 import os
 import json
 import sqlite3
-from predict_tool import RealTimeExpertSystem
+from predict_tool import ExpertFootballSystem
 from learning_engine import refine_models
 # Importamos la función de aprendizaje profundo definida anteriormente
 from a1ed17a1 import tournament_deep_learning 
@@ -19,7 +19,7 @@ def run_daily_automation():
         print(f"⚠️ Error en Deep Learning: {e}")
 
     # 2. Inicializar Sistema de Predicción
-    system = RealTimeExpertSystem(api_key)
+    system = ExpertFootballSystem()
 
     # 3. Obtener y Analizar Partidos Reales
     print("📡 Fase 2: Obteniendo fixtures y generando inferencia...")
